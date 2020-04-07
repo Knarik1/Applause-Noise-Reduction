@@ -2,8 +2,10 @@ import tensorflow as tf
 from data_loader import *
 import numpy as np
 from tqdm import tqdm
+from scipy.io import wavfile
 from abc import abstractmethod
 import preprocess as preprocess
+import time
 
 class BaseNN:
     def __init__(self, train_dir, val_dir, test_dir, train_batch_size,
@@ -15,6 +17,7 @@ class BaseNN:
         self.data_loader = DataLoader(train_dir, val_dir, test_dir,
                                       train_batch_size, val_batch_size, test_batch_size,
                                       n_inputs, seq_length)
+                             
         self.config = {
             "num_epochs": num_epochs,
             "learning_rate": learning_rate,
@@ -34,6 +37,9 @@ class BaseNN:
         # check if summaries' directory exists, otherwise create it.
         if not os.path.exists(self.summaries_path):
             os.makedirs(self.summaries_path)
+            
+        print("learning rate: ", self.config["learning_rate"])    
+        print("train batch size: ", self.data_loader.config["train_batch_size"])     
 
     def create_network(self):
         # clears the default graph stack and resets the global default graph.
@@ -86,11 +92,10 @@ class BaseNN:
         else:
             self.sess.run(tf.global_variables_initializer())
             print("----Init params----")
-
+        
     def compute_cost(self):
-        loss = self.metrics()
-        self.cost = tf.reduce_mean(loss)
-
+        self.cost = self.metrics()
+        
     def create_optimizer(self):
         # update ops for batch normalization
         extra_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
@@ -105,17 +110,17 @@ class BaseNN:
         num_iter_val = np.ceil(self.data_loader.m_val / self.data_loader.config["val_batch_size"])
 
         print("----Start training----")
-        print("number of epochs", self.config["num_epochs"])
-        print("learning_rate", self.config["learning_rate"])
-
-        for epoch in tqdm(range(self.config["num_epochs"])):
+        for epoch in range(self.config["num_epochs"]):
             # ------------------------------------- Train ---------------------------------------
+            start_time_train = time.time()
             minibatch_cost_sum_train = 0
 
             # getting new sequence for every epoch to shuffle entire train dataset
             perm = np.random.permutation(self.data_loader.m_train)
-
-            for iter in tqdm(range(int(num_iter_train))):
+            start_time_train_loader = time.time()
+            X_batch, y_batch = self.data_loader.train_data_loader(0, perm=perm)
+            print("Loader(train) --- %s seconds ---" % (time.time() - start_time_train_loader))
+            for iter in range(int(num_iter_train)):
                 X_batch, y_batch = self.data_loader.train_data_loader(iter, perm=perm)
 
                 feed_dict_train = {
@@ -125,7 +130,7 @@ class BaseNN:
                 }
 
                 _, minibatch_cost, train_summary = self.sess.run([self.optimizer, self.cost, self.train_summary_merged], feed_dict=feed_dict_train)
-                print(minibatch_cost)
+
                 minibatch_cost_sum_train += minibatch_cost
 
                 if iter % summary_step == 0:
@@ -134,9 +139,11 @@ class BaseNN:
 
             # mean cost for each epoch
             minibatch_cost_mean_train = minibatch_cost_sum_train / num_iter_train
+            print("Training --- %s seconds ---" % (time.time() - start_time_train))
 
 
             # ------------------------------------- Validation ---------------------------------------
+            start_time_val = time.time()
             minibatch_cost_sum_val = 0
 
             # getting new sequence for every epoch to shuffle entire val dataset
@@ -161,15 +168,18 @@ class BaseNN:
 
             # mean cost for each epoch
             minibatch_cost_mean_val = minibatch_cost_sum_val / num_iter_val
+            print("Val --- %s seconds ---" % (time.time() - start_time_val))
 
             if epoch % display_step == 0:
-                print('Epoch %d: Train Cost = %.2f' % (epoch, minibatch_cost_mean_train))
+                print('Epoch %d: Train Cost = %.4f' % (epoch, minibatch_cost_mean_train))
 
             if epoch % validation_step == 0:
-                print('Epoch %d: Val Cost = %.2f' % (epoch, minibatch_cost_mean_val))
-
+                print('Epoch %d: Val Cost = %.4f' % (epoch, minibatch_cost_mean_val))
+                
             if epoch % checkpoint_step == 0:
+                start_time_ckpt = time.time()
                 self.saver.save(self.sess, self.checkpoints_path + "/checkpoint_" + str(epoch)+".ckpt")
+                print("Checkpoint saver --- %s seconds ---" % (time.time() - start_time_ckpt))
 
         self.train_writer.close()
         self.val_writer.close()
@@ -198,19 +208,30 @@ class BaseNN:
 
         print('Test Cost = ', test_cost)
 
-    def test_song(self):
-        noisy_song, song = self.data_loader.get_test_song()
-        print(noisy_song.shape)
+    def estimate_test_song(self, input_path, output_path):
+        # predict masks
+        magn_batch, phase_batch = self.data_loader.test_song_loader(input_path)
 
         feed_dict_test = {
-            self.X_tf: [noisy_song],
-            self.y_tf: [song],
+            self.X_tf: magn_batch,
             self.training_flag: False
         }
+        
+        pred_mask_batch = self.sess.run(self.y_preds_tf, feed_dict=feed_dict_test)
+        
+        # estimate magnitudes
+        magn_estimates_batch = pred_mask_batch * magn_batch
+        
+        # build full song
+        estim_song = np.zeros(preprocess.SLICE_DURATION * preprocess.SAMPLE_RATE * magn_estimates_batch.shape[0])
 
-        predicted_song = self.sess.run(self.y_preds_tf, feed_dict=feed_dict_test)
+        for sl in range(magn_estimates_batch.shape[0]):
+            # get slices
+            estim_song_slice = preprocess.get_signal_from_fft(magn_estimates_batch[sl], phase_batch[sl])
+            estim_song[sl * preprocess.SAMPLE_RATE * preprocess.SLICE_DURATION: (sl + 1) * preprocess.SLICE_DURATION * preprocess.SAMPLE_RATE] += estim_song_slice
 
-        preprocess.post_process_signal_as_wav(predicted_song)
+        wavfile.write(output_path + "/estimated_song.wav", preprocess.SAMPLE_RATE, estim_song.astype("int16"))
+        print("----Test song has generated successfully!----")
 
     @abstractmethod
     def network(self):

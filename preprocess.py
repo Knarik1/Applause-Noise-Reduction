@@ -96,7 +96,7 @@ def process_signal_as_wav(audio_path):
         file_path_noisy = get_path(audio_path, 'noisy_song', sl)
 
         signal_slice = signal[sl * SAMPLE_RATE * SLICE_DURATION : (sl + 1) * SLICE_DURATION * SAMPLE_RATE]
-        noisy_signal_slice = get_noisy_signal(signal_slice)
+        noisy_signal_slice, noise = get_noisy_signal(signal_slice)
 
         signal_slice_with_new_phase = np.zeros(len(signal_slice))
         noisy_signal_new_slice = np.zeros(len(noisy_signal_slice))
@@ -131,7 +131,7 @@ def process_signal_as_h5(audio_path):
 
     for sl in range(len(signal) // (SLICE_DURATION * SAMPLE_RATE)):
         signal_slice = signal[sl * SAMPLE_RATE * SLICE_DURATION: (sl + 1) * SLICE_DURATION * SAMPLE_RATE]
-        noisy_signal_slice = get_noisy_signal(signal_slice)
+        noisy_signal_slice, noise = get_noisy_signal(signal_slice)
 
         signal_fft_slice = []
         noisy_signal_fft_slice = []
@@ -171,10 +171,11 @@ def get_noisy_signal(signal):
 
     snr = get_SNR(signal, noise_modified)
     # multiplied with snr with noise because we get ratios of signal/noise to fixed signal energy
-    noisy_signal = signal + snr * noise_modified
+    noise_with_snr = snr * noise_modified
+    noisy_signal = signal + noise_with_snr
     assert len(noisy_signal) == len(signal)
 
-    return noisy_signal
+    return noisy_signal, noise_with_snr
 
 
 def get_tiled_noise(noise, n):
@@ -188,7 +189,7 @@ def get_tiled_noise(noise, n):
 
 def get_SNR(signal, noise):
     # dB scale
-    rand_dB = np.random.randint(-5, 30)
+    rand_dB = np.random.randint(-3, 20)
 
     # astype needed for not get negative powers
     signal_power = np.mean(np.square(signal.astype(np.int64)))
@@ -244,5 +245,17 @@ def create_output_folder():
         os.makedirs(OUTPUT + folder)
 
 
-def post_process_signal_as_wav(song_arr):
-  pass
+def get_signal_from_fft(magn, phase):
+  VORBIS_WINDOW = vorbis_window(WINDOW_LEN)
+  signal = np.zeros(SLICE_DURATION * SAMPLE_RATE)
+  frame_count = len(signal) // STEP - 1
+
+  for i in range(frame_count):
+      cur_phase = phase[i]
+      cur_magn = magn[i]
+
+      cur_fft = cur_magn * cur_phase
+      cur_window = np.fft.irfft(cur_fft) * VORBIS_WINDOW
+      signal[i * STEP: i * STEP + WINDOW_LEN] += cur_window
+
+  return np.array(signal)

@@ -1,6 +1,7 @@
 import os
 import glob
 import h5py
+import time
 import numpy as np
 
 
@@ -45,7 +46,7 @@ class DataLoader:
         # get mini-batch of paths
         x_paths_batch = file_paths[0][index: index + batch_size]
         y_paths_batch = file_paths[1][index: index + batch_size]
-
+       
         # reading files from paths
         for path in x_paths_batch:
             # getting signal array
@@ -63,14 +64,8 @@ class DataLoader:
         x_batch = np.array(x_batch)
         y_batch = np.array(y_batch)
 
-        # normalizing
-        range_x = np.max(x_batch) - np.min(x_batch)
-        if range_x > 0:
-            x_batch = (x_batch - np.min(x_batch)) / range_x
-
-        range_y = np.max(y_batch) - np.min(y_batch)
-        if range_y > 0:
-            y_batch = (y_batch - np.min(y_batch)) / range_y
+        # mask is signal/noisy_signal
+        y_batch = np.clip(y_batch / (x_batch + 10e-7), 0, 1)
 
         return x_batch, y_batch
 
@@ -83,16 +78,30 @@ class DataLoader:
     def test_data_loader(self, index, perm=None):
         return self.batch_data_loader(self.config["test_batch_size"], self.test_paths, index, perm=perm)
 
-    def get_test_song(self):
-        x_path = self.test_paths.T[0][0]
-        y_path = self.test_paths.T[0][1]
+    def test_song_loader(self, path):
+        magn_batch = []
+        phase_batch = []
+        
+        # getting song file names
+        magn_paths = glob.glob(os.path.join(path + '/h5s/magnitude', "*.h5"))
+        phase_paths = glob.glob(os.path.join(path + '/h5s/phase', "*.h5"))
+        self.m_test_song = len(magn_paths)
 
-        print("Signal for test is\n", x_path, "\n", y_path)
+        # reading files from paths
+        for path in magn_paths:
+            # getting signal array
+            with h5py.File(path, 'r') as f:
+                data = list(f['dataset'])
+            magn_batch.append(data)
 
-        with h5py.File(x_path, 'r') as f:
-            x_data = np.array(list(f['dataset']))
+        for path in phase_paths:
+            # getting signal array
+            with h5py.File(path, 'r') as f:
+                data = list(f['dataset'])
+            phase_batch.append(data)
 
-        with h5py.File(y_path, 'r') as f:
-            y_data = np.array(list(f['dataset']))
+        # converting to np.array
+        magn_batch = np.array(magn_batch)
+        phase_batch = np.array(phase_batch)
 
-        return x_data, y_data
+        return magn_batch, phase_batch

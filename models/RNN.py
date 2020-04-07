@@ -10,11 +10,12 @@ class RNN(BaseNN):
         multi_rnn_cell = tf.nn.rnn_cell.MultiRNNCell(rnn_layers)
 
         outputs, state = tf.nn.dynamic_rnn(cell=multi_rnn_cell, inputs=self.X_tf, dtype=tf.float32)
+        
 
         Z = tf.layers.dense(outputs, self.data_loader.config["n_inputs"], activation="sigmoid")
+        
         return Z
 
     def metrics(self):
-        cost = tf.losses.mean_squared_error(predictions=self.y_preds_tf, labels=self.y_tf)
-
+        cost = tf.reduce_mean(tf.square(self.y_preds_tf - self.y_tf))
         return cost
