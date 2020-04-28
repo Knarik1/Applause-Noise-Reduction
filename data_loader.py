@@ -18,34 +18,31 @@ class DataLoader:
         }
 
         # getting data file names
+        # sort data to sure the match between signal and noisy signal paths
         x_train_paths = glob.glob(os.path.join(train_dir + '/h5s/noisy', "*.h5"))
         y_train_paths = glob.glob(os.path.join(train_dir + '/h5s/song', "*.h5"))
-        self.train_paths = np.array([x_train_paths, y_train_paths])
+        self.train_paths = np.sort(np.array([x_train_paths, y_train_paths]), axis=1)
         self.m_train = self.train_paths.shape[1]
 
         x_val_paths = glob.glob(os.path.join(val_dir + '/h5s/noisy', "*.h5"))
         y_val_paths = glob.glob(os.path.join(val_dir + '/h5s/song', "*.h5"))
-        self.val_paths = np.array([x_val_paths, y_val_paths])
+        self.val_paths = np.sort(np.array([x_val_paths, y_val_paths]), axis=1)
         self.m_val = self.val_paths.shape[1]
 
         x_test_paths = glob.glob(os.path.join(test_dir + '/h5s/noisy', "*.h5"))
         y_test_paths = glob.glob(os.path.join(test_dir + '/h5s/song', "*.h5"))
-        self.test_paths = np.array([x_test_paths, y_test_paths])
+        self.test_paths = np.sort(np.array([x_test_paths, y_test_paths]), axis=1)
         self.m_test = self.test_paths.shape[1]
 
         print("----Data Loader init----")
 
-    def batch_data_loader(self, batch_size, file_paths, index, perm=None):
+    def batch_data_loader(self, batch_size, file_paths, index):
         x_batch = []
         y_batch = []
-
-        # shuffle file_paths array
-        if perm is not None:
-            file_paths = file_paths.T[perm].T
-
+            
         # get mini-batch of paths
-        x_paths_batch = file_paths[0][index: index + batch_size]
-        y_paths_batch = file_paths[1][index: index + batch_size]
+        x_paths_batch = file_paths[0][index*batch_size: (index+1)* batch_size]
+        y_paths_batch = file_paths[1][index*batch_size: (index+1)* batch_size]
        
         # reading files from paths
         for path in x_paths_batch:
@@ -65,36 +62,26 @@ class DataLoader:
         y_batch = np.array(y_batch)
 
         # mask is signal/noisy_signal
-        y_batch = np.clip(y_batch / (x_batch + 10e-7), 0, 1)
+        # y_batch = np.clip(y_batch / (x_batch + 10e-7), 0, 1)
+        y_batch = y_batch**2 /(y_batch + x_batch)**2
 
         return x_batch, y_batch
 
-    def train_data_loader(self, index, perm=None):
-        return self.batch_data_loader(self.config["train_batch_size"], self.train_paths, index, perm=perm)
-
-    def val_data_loader(self, index, perm=None):
-        return self.batch_data_loader(self.config["val_batch_size"], self.val_paths, index, perm=perm)
-
-    def test_data_loader(self, index, perm=None):
-        return self.batch_data_loader(self.config["test_batch_size"], self.test_paths, index, perm=perm)
-
-    def test_song_loader(self, path):
+    def test_song_data_loader (self, path):
         magn_batch = []
         phase_batch = []
-        
-        # getting song file names
-        magn_paths = glob.glob(os.path.join(path + '/h5s/magnitude', "*.h5"))
-        phase_paths = glob.glob(os.path.join(path + '/h5s/phase', "*.h5"))
-        self.m_test_song = len(magn_paths)
 
+        x_paths_batch = np.sort(glob.glob(os.path.join(path + '/h5s/magnitude', "*.h5")))
+        y_paths_batch = np.sort(glob.glob(os.path.join(path + '/h5s/phase', "*.h5")))
+            
         # reading files from paths
-        for path in magn_paths:
+        for path in x_paths_batch:
             # getting signal array
             with h5py.File(path, 'r') as f:
                 data = list(f['dataset'])
             magn_batch.append(data)
 
-        for path in phase_paths:
+        for path in y_paths_batch:
             # getting signal array
             with h5py.File(path, 'r') as f:
                 data = list(f['dataset'])
@@ -105,3 +92,12 @@ class DataLoader:
         phase_batch = np.array(phase_batch)
 
         return magn_batch, phase_batch
+
+    def train_data_loader(self, index):
+        return self.batch_data_loader(self.config["train_batch_size"], self.train_paths, index)
+
+    def val_data_loader(self, index):
+        return self.batch_data_loader(self.config["val_batch_size"], self.val_paths, index)
+
+    def test_data_loader(self, index):
+        return self.batch_data_loader(self.config["test_batch_size"], self.test_paths, index)

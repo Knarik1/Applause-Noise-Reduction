@@ -1,12 +1,12 @@
 import tensorflow.compat.v1 as tf
 from models.RNN import  *
-from preprocess import prepare_dataset
+from preprocess import prepare_dataset, generate_noisy_signal
 
 tf.app.flags.DEFINE_string('mode', 'train', 'whether to train/test/preprocess')
 
 tf.app.flags.DEFINE_string('data_path', 'data', 'path to your preprocessed CSV data file')
 tf.app.flags.DEFINE_string('subset', 'train', 'path to your CSV file linking paths of mixes and sources')
-tf.app.flags.DEFINE_float('split_valid', None, 'validation set split')
+tf.app.flags.DEFINE_float('split_valid', 0, 'validation set split')
 tf.app.flags.DEFINE_string('save_as', 'h5', 'Wheter to save as h5/wav')
 tf.app.flags.DEFINE_integer('slice_duration', '5', 'Duration in seconds of slice to be cut before stft')
 tf.app.flags.DEFINE_integer('workers', '2', 'Number of workers')
@@ -19,19 +19,21 @@ tf.app.flags.DEFINE_integer('n_inputs', 241, 'Fourier transform coefficients -> 
 tf.app.flags.DEFINE_integer('seq_length', 332, 'Number of frames')
 
 tf.app.flags.DEFINE_integer('num_epochs', 1000, 'epochs to train')
-tf.app.flags.DEFINE_float('learning_rate', 0.01, 'Learning rate of the optimizer')
+tf.app.flags.DEFINE_float('learning_rate', 0.001, 'Learning rate of the optimizer')
 
 tf.app.flags.DEFINE_integer('display_step', 1, 'Number of steps we cycle through before displaying detailed progress.')
-tf.app.flags.DEFINE_integer('validation_step', 5, 'Number of steps we cycle through before validating the model.')
+tf.app.flags.DEFINE_integer('validation_step', 1, 'Number of steps we cycle through before validating the model.')
 
 tf.app.flags.DEFINE_string('base_dir', './results', 'Directory in which results will be stored.')
 tf.app.flags.DEFINE_integer('checkpoint_step', 1, 'Number of steps we cycle through before saving checkpoint.')
-tf.app.flags.DEFINE_integer('max_to_keep', 20, 'Number of checkpoint files to keep.')
+tf.app.flags.DEFINE_integer('max_to_keep', 50, 'Number of checkpoint files to keep.')
 
 tf.app.flags.DEFINE_integer('summary_step', 1, 'Number of steps we cycle through before saving summary.')
 
-tf.app.flags.DEFINE_string('estimated_fft_path', None, 'path to load song fft')
-tf.app.flags.DEFINE_string('estimated_song_path', './results/RNN', 'path to save estimated song')
+tf.app.flags.DEFINE_string('signal_path', None, 'signal path to generate noisy signal')
+tf.app.flags.DEFINE_boolean('return_noise', False, 'save also generated noisy signal noise')
+tf.app.flags.DEFINE_string('noisy_song_path', None, 'path to load noisy song')
+tf.app.flags.DEFINE_string('output_estimated_path', './results/RNN', 'path to save estimated song')
 tf.app.flags.DEFINE_string('model_name', 'RNN', 'name of model')
 
 FLAGS = tf.app.flags.FLAGS
@@ -40,6 +42,11 @@ FLAGS = tf.app.flags.FLAGS
 def main(argv=None):
     if FLAGS.mode == 'preprocess':
         prepare_dataset(FLAGS.data_path, FLAGS.subset, FLAGS.split_valid, FLAGS.slice_duration, FLAGS.save_as)
+        exit()
+
+    if FLAGS.mode == 'generate_noisy':
+        generate_noisy_signal(FLAGS.signal_path, FLAGS.return_noise)
+        exit()    
 
     model = RNN(
         train_dir=FLAGS.data_path + '/train',
@@ -65,7 +72,7 @@ def main(argv=None):
     elif FLAGS.mode == 'test':
         model.test_model()
     elif FLAGS.mode == 'test_song':
-        model.estimate_test_song(FLAGS.estimated_fft_path, FLAGS.estimated_song_path)
+        model.estimate_test_song(FLAGS.noisy_song_path, FLAGS.output_estimated_path)
 
 
 if __name__ == "__main__":
