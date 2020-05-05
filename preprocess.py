@@ -3,6 +3,7 @@ import glob
 import h5py
 import shutil
 import numpy as np
+import pandas as pd
 from tqdm import tqdm
 from scipy.io import wavfile
 
@@ -82,7 +83,7 @@ def process_signal_as_wav(audio_path):
     assert sr == 16000
     
     # signals should be float to avoid int overflow and mono
-    signal = signal.astype('float')
+    signal = signal.astype('float32')
     signal = to_mono(signal)
     
     if len(signal) < SLICE_DURATION * SAMPLE_RATE:
@@ -124,8 +125,8 @@ def process_signal_as_wav(audio_path):
         if max_absolute_noisy_signal > 32767:
             noisy_signal_new_slice = noisy_signal_new_slice * (32767 / max_absolute_noisy_signal)
            
-        wavfile.write(file_path_signal, SAMPLE_RATE, signal_slice_with_new_phase.astype("int16"))
-        wavfile.write(file_path_noisy, SAMPLE_RATE, noisy_signal_new_slice.astype("int16"))
+        wavfile.write(file_path_signal, SAMPLE_RATE, signal_slice_with_new_phase.astype("int16").flatten())
+        wavfile.write(file_path_noisy, SAMPLE_RATE, noisy_signal_new_slice.astype("int16").flatten())
 
 
 def process_signal_as_h5(audio_path):
@@ -133,7 +134,7 @@ def process_signal_as_h5(audio_path):
     assert sr == 16000
 
     # signals should be float to avoid int overflow and mono
-    signal = signal.astype('float')
+    signal = signal.astype('float32')
     signal = to_mono(signal)
     
     
@@ -187,7 +188,7 @@ def get_noisy_signal(signal):
     assert sr == 16000
     
     # signals should be float to avoid int overflow and mono
-    noise = noise.astype('float')
+    noise = noise.astype('float32')
     noise = to_mono(noise)
 
     if len(signal) > len(noise):
@@ -221,9 +222,9 @@ def get_SNR(signal, noise):
     rand_dB = np.random.randint(-3, 20)
 
     # astype needed for not get negative powers
-    signal_power = np.mean(np.square(signal.astype(np.int64)))
-    noise_power = np.mean(np.square(noise.astype(np.int64))) + 1e-7
-    ratio = signal_power / noise_power
+    signal_power = np.mean(np.square(signal))
+    noise_power = np.mean(np.square(noise))
+    ratio = signal_power / (noise_power + 1e-7)
 
     # initial SNR is 10 * np.log10(signal_power / noise_power)
     # signal to noise scale factor
@@ -296,6 +297,11 @@ def process_test_song(path):
     magn_batch = []
     phase_batch = []
 
+    #reading stats values
+    df = pd.read_csv('norm_stats.csv', index_col=None)
+    y_mean = df.iloc[0]['y_data']
+    y_std = df.iloc[1]['y_data']
+
     for sl in range(song_len // SLICE_STEP - 1):
         # get slices
         noisy_song_slice = noisy_song[sl * SLICE_STEP: sl * SLICE_STEP + SLICE_DURATION * SAMPLE_RATE]
@@ -318,8 +324,13 @@ def process_test_song(path):
     # converting to np.array
     magn_batch = np.array(magn_batch)
     phase_batch = np.array(phase_batch)
+    print(magn_batch[0])
+    print(np.max(magn_batch))
 
-    return magn_batch, phase_batch
+    # #normalizing
+    magn_batch_norm = (magn_batch - y_mean) / y_std
+
+    return magn_batch_norm, phase_batch
 
 def generate_noisy_signal(signal_path, return_noise=False):
     sr, signal = wavfile.read(signal_path)
@@ -327,7 +338,7 @@ def generate_noisy_signal(signal_path, return_noise=False):
     signal_len = len(signal)
     
     # signals should be float to avoid int overflow and mono
-    signal = signal.astype('float')
+    signal = signal.astype('float32')
     signal = to_mono(signal)
 
     # config
@@ -362,9 +373,9 @@ def generate_noisy_signal(signal_path, return_noise=False):
                 
     #save signals as wav
     signal_name = os.path.basename(signal_path)[:-4]
-    wavfile.write(os.path.join(os.path.dirname(signal_path), signal_name + '_noisy_song.wav'), sr, noisy_signal.astype("int16"))
+    wavfile.write(os.path.join(os.path.dirname(signal_path), signal_name + '_noisy_song.wav'), sr, noisy_signal.astype("int16").flatten())
     
     if return_noise:
-        wavfile.write(os.path.join(os.path.dirname(signal_path), signal_name + '_noise.wav'), sr, noise.astype("int16"))
+        wavfile.write(os.path.join(os.path.dirname(signal_path), signal_name + '_noise.wav'), sr, noise.astype("int16").flatten())
     
     print("Generated successfully")

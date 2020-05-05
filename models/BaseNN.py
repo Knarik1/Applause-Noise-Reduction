@@ -17,8 +17,7 @@ class BaseNN:
         self.data_loader = DataLoader(train_dir, val_dir, test_dir,
                                       train_batch_size, val_batch_size, test_batch_size,
                                       n_inputs, seq_length)
-                                      
-                                      
+
         self.config = {
             "num_epochs": num_epochs,
             "learning_rate": learning_rate,
@@ -115,10 +114,8 @@ class BaseNN:
 
                 _, minibatch_cost, global_step, train_summary = self.sess.run([self.optimizer, self.cost, self.global_step, self.summary_op], feed_dict=feed_dict_train)
                 
-                print("global_step")
-                print(global_step)
-                print("minibatch_cost")
-                print(minibatch_cost)
+                print("global_step is ", global_step)
+                print("minibatch_cost is", minibatch_cost)
 
                 minibatch_cost_sum_train += minibatch_cost
                 
@@ -147,8 +144,7 @@ class BaseNN:
     
                 minibatch_cost_val, val_summary = self.sess.run([self.cost, self.summary_op], feed_dict=feed_dict_val)
     
-                print("minibatch_cost val")
-                print(minibatch_cost_val)
+                print("minibatch_cost val is ", minibatch_cost_val)
 
                 minibatch_cost_sum_val += minibatch_cost_val
     
@@ -174,7 +170,8 @@ class BaseNN:
         
         for iter in tqdm(range(int(num_iter))):
             X_test_batch, y_test_batch = self.data_loader.test_data_loader(iter)
-
+            print(X_test_batch.shape)
+            exit()
             feed_dict_test = {
                 self.X_tf: X_test_batch,
                 self.y_tf: y_test_batch,
@@ -197,18 +194,20 @@ class BaseNN:
 
         # preprocess wav as ffts
         magn_batch, phase_batch = preprocess.process_test_song(input_path)
-        magn_ideal_batch, phase_ideal_batch = preprocess.process_test_song('./data/Songs/test_song/Carlos Gonzalez - A Place For Us/mixture16.wav')
+        # magn_ideal_batch, phase_ideal_batch = preprocess.process_test_song('./data/Songs/test_song/Carlos Gonzalez - A Place For Us/mixture16.wav')
 
+        print(magn_batch)
+        print(np.max(magn_batch))
+        
+        feed_dict_test = {
+            self.X_tf: magn_batch,
+            self.training_flag: False
+        }
+        
+        pred_mask_batch = self.sess.run(self.y_preds_tf, feed_dict=feed_dict_test)
+        # pred_mask_batch = np.clip(magn_ideal_batch / (magn_batch + 10e-7), 0, 2)
+        # pred_mask_batch = np.sqrt(magn_ideal_batch**2/((magn_batch - magn_ideal_batch)**2 + magn_ideal_batch**2))
 
-        # feed_dict_test = {
-        #     self.X_tf: magn_batch,
-        #     self.training_flag: False
-        # }
-        
-        # pred_mask_batch = self.sess.run(self.y_preds_tf, feed_dict=feed_dict_test)
-        # pred_mask_batch = np.clip(magn_ideal_batch / (magn_batch + 10e-7), 0, 1)
-        pred_mask_batch = magn_ideal_batch**2 /(magn_ideal_batch + magn_batch)**2
-        
         # estimate magnitudes
         magn_estimates_batch = pred_mask_batch * magn_batch
         
@@ -218,6 +217,9 @@ class BaseNN:
         for sl in range(magn_estimates_batch.shape[0]):
             # get slices
             estim_song_slice = preprocess.get_signal_from_fft(magn_estimates_batch[sl], phase_batch[sl])
+            print("estimated")
+            print(estim_song_slice)
+            return
             estim_song[sl * preprocess.SLICE_STEP: sl * preprocess.SLICE_STEP + preprocess.SLICE_DURATION * preprocess.SAMPLE_RATE] += estim_song_slice * (preprocess.vorbis_window(len(estim_song_slice)) ** 2)
         
         # handle clipping
@@ -225,7 +227,7 @@ class BaseNN:
         if max_absolute_estim_song > 32767:
             estim_song = estim_song * (32767 / max_absolute_estim_song)
 
-        estim_name = os.path.basename(input_path)[:-4] + "_estimated.wav" 
+        estim_name = os.path.basename(input_path)[:-4] + "_estimated_clip_5_norm.wav" 
         wavfile.write(output_path + '/' + estim_name, preprocess.SAMPLE_RATE, estim_song.astype("int16"))
         print("----Test song has generated successfully!----") 
 

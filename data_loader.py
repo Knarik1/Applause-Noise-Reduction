@@ -3,6 +3,7 @@ import glob
 import h5py
 import time
 import numpy as np
+import pandas as pd
 
 
 class DataLoader:
@@ -39,7 +40,7 @@ class DataLoader:
     def batch_data_loader(self, batch_size, file_paths, index):
         x_batch = []
         y_batch = []
-            
+
         # get mini-batch of paths
         x_paths_batch = file_paths[0][index*batch_size: (index+1)* batch_size]
         y_paths_batch = file_paths[1][index*batch_size: (index+1)* batch_size]
@@ -61,11 +62,18 @@ class DataLoader:
         x_batch = np.array(x_batch)
         y_batch = np.array(y_batch)
 
-        # mask is signal/noisy_signal
-        # y_batch = np.clip(y_batch / (x_batch + 10e-7), 0, 1)
-        y_batch = y_batch**2 /(y_batch + x_batch)**2
+        # reading stats values
+        df = pd.read_csv('norm_stats.csv', index_col=None) 
+        x_mean = df.iloc[0]['x_data']
+        x_std = df.iloc[1]['x_data']
+        # normalizing
+        x_batch_norm = (x_batch - x_mean) / x_std 
 
-        return x_batch, y_batch
+        # mask is signal/noisy_signal
+        y_batch = np.clip(y_batch / (x_batch + 10e-7), 0, 5)
+        # y_batch = y_batch**2 /(y_batch**2 + x_batch**2)
+
+        return x_batch_norm, y_batch
 
     def test_song_data_loader (self, path):
         magn_batch = []
