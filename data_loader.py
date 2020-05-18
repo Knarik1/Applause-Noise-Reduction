@@ -84,6 +84,7 @@ class DataLoader:
 
         # mask is signal/noisy_signal
         # mask = np.clip(y_batch / (x_batch + 10e-7), 0, 1)
+        # diff_batch**2 /(diff_batch**2 + y_batch**2 + 10e-7)
         mask = y_batch**2 /(diff_batch**2 + y_batch**2 + 10e-7)
 
         return x_batch, mask
