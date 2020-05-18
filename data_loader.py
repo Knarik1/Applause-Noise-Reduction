@@ -4,7 +4,7 @@ import h5py
 import time
 import numpy as np
 import pandas as pd
-
+import preprocess as preprocess
 
 class DataLoader:
     def __init__(self, train_dir, val_dir, test_dir, train_batch_size, valid_batch_size,
@@ -39,40 +39,17 @@ class DataLoader:
         self.m_test = self.test_paths.shape[1]
 
         print("----Data Loader init----")
+        
 
     def batch_data_loader(self, batch_size, file_paths, index):
-        x_batch = []
-        y_batch = []
-        diff_batch = []
-
         # get mini-batch of paths
         x_paths_batch = file_paths[0][index*batch_size: (index+1)* batch_size]
         y_paths_batch = file_paths[1][index*batch_size: (index+1)* batch_size]
         diff_paths_batch = file_paths[2][index*batch_size: (index+1)* batch_size]
        
-        # reading files from paths
-        for path in x_paths_batch:
-            # getting signal array
-            with h5py.File(path, 'r') as f:
-                data = list(f['dataset'])
-            x_batch.append(data)
-
-        for path in y_paths_batch:
-            # getting signal array
-            with h5py.File(path, 'r') as f:
-                data = list(f['dataset'])
-            y_batch.append(data)
-
-        for path in diff_paths_batch:
-            # getting signal array
-            with h5py.File(path, 'r') as f:
-                data = list(f['dataset'])
-            diff_batch.append(data)    
-
-        # converting to np.array
-        x_batch = np.array(x_batch)
-        y_batch = np.array(y_batch)
-        diff_batch = np.array(diff_batch)
+        x_batch = preprocess.read_hdf5(x_paths_batch)
+        y_batch = preprocess.read_hdf5(y_paths_batch)
+        diff_batch = preprocess.read_hdf5(diff_paths_batch)
 
         # reading stats values
         # df = pd.read_csv('norm_stats.csv', index_col=None) 
@@ -95,23 +72,9 @@ class DataLoader:
 
         x_paths_batch = np.sort(glob.glob(os.path.join(path + '/h5s/magnitude', "*.h5")))
         y_paths_batch = np.sort(glob.glob(os.path.join(path + '/h5s/phase', "*.h5")))
-            
-        # reading files from paths
-        for path in x_paths_batch:
-            # getting signal array
-            with h5py.File(path, 'r') as f:
-                data = list(f['dataset'])
-            magn_batch.append(data)
 
-        for path in y_paths_batch:
-            # getting signal array
-            with h5py.File(path, 'r') as f:
-                data = list(f['dataset'])
-            phase_batch.append(data)
-
-        # converting to np.array
-        magn_batch = np.array(magn_batch)
-        phase_batch = np.array(phase_batch)
+        magn_batch = preprocess.read_hdf5(x_paths_batch)
+        phase_batch = preprocess.read_hdf5(y_paths_batch)
 
         return magn_batch, phase_batch
 

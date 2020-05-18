@@ -21,6 +21,7 @@ OUTPUT = ''
 NOISE_DATAPATH = ''
 NOISE_DATAPATH_TEST = ''
 DIFFERENCE_FFT = True
+INCREASE_DATASET_TIMES = 3
 
 
 def prepare_dataset(data_path,
@@ -82,54 +83,51 @@ def prepare_dataset(data_path,
 
 
 def process_signal_as_wav(audio_path):
-    sr, signal = wavfile.read(audio_path)
-    assert sr == 16000
-    
-    # signals should be float to avoid int overflow and mono
-    signal = signal.astype('float32')
-    signal = to_mono(signal)
+    signal = validate_signal(audio_path)
     
     if len(signal) < SLICE_DURATION * SAMPLE_RATE:
         return
 
     for sl in range(len(signal) // SLICE_STEP - 1):
         file_path_signal = get_path(audio_path, 'song', sl)
-        file_path_noisy = get_path(audio_path, 'noisy_song', sl)
 
-        signal_slice = signal[sl * SLICE_STEP: sl * SLICE_STEP + SLICE_DURATION * SAMPLE_RATE]
-        noisy_signal_slice, noise = get_noisy_signal(signal_slice)
+        # making noisy songs using different noises with the same song slice
+        for k in range(INCREASE_DATASET_TIMES):
+            file_path_noisy = get_path(audio_path, 'noisy_song', sl)
 
-        signal_slice_with_new_phase = np.zeros(len(signal_slice))
-        noisy_signal_new_slice = np.zeros(len(noisy_signal_slice))
-        frame_count = len(signal_slice) // STEP - 1
+            signal_slice = signal[sl * SLICE_STEP: sl * SLICE_STEP + SLICE_DURATION * SAMPLE_RATE]
+            noisy_signal_slice, noise = get_noisy_signal(signal_slice)
 
-        for i in range(frame_count):
-            # noisy
-            noisy_cur_window = noisy_signal_slice[i * STEP: i * STEP + WINDOW_LEN]
-            noisy_magnitude, noisy_phase, noisy_fft = get_magn_phase(noisy_cur_window)
-            # signal
-            signal_cur_window = signal_slice[i * STEP: i * STEP + WINDOW_LEN]
-            signal_magnitude, signal_phase, signal_fft = get_magn_phase(signal_cur_window)
-            # new signal
-            signal_new_fft = signal_magnitude * noisy_phase
-            signal_new_window = np.fft.irfft(signal_new_fft) * vorbis_window(WINDOW_LEN)
-            signal_slice_with_new_phase[i * STEP: i * STEP + WINDOW_LEN] += signal_new_window
-            # new noisy    
-            noisy_new_fft = noisy_magnitude * noisy_phase
-            noisy_new_window = np.fft.irfft(noisy_new_fft) * vorbis_window(WINDOW_LEN)
-            noisy_signal_new_slice[i * STEP: i * STEP + WINDOW_LEN] += noisy_new_window
+            signal_slice_with_new_phase = np.zeros(len(signal_slice))
+            noisy_signal_new_slice = np.zeros(len(noisy_signal_slice))
+            frame_count = len(signal_slice) // STEP - 1
 
-        write_wav(file_path_signal, signal_slice_with_new_phase)
-        write_wav(file_path_noisy, noisy_signal_new_slice)
+            for i in range(frame_count):
+                # noisy
+                noisy_cur_window = noisy_signal_slice[i * STEP: i * STEP + WINDOW_LEN]
+                noisy_magnitude, noisy_phase, noisy_fft = get_magn_phase(noisy_cur_window)
+                # signal
+                signal_cur_window = signal_slice[i * STEP: i * STEP + WINDOW_LEN]
+                signal_magnitude, signal_phase, signal_fft = get_magn_phase(signal_cur_window)
+                # new signal
+                signal_new_fft = signal_magnitude * noisy_phase
+                signal_new_window = np.fft.irfft(signal_new_fft) * vorbis_window(WINDOW_LEN)
+                signal_slice_with_new_phase[i * STEP: i * STEP + WINDOW_LEN] += signal_new_window
+                # new noisy    
+                noisy_new_fft = noisy_magnitude * noisy_phase
+                noisy_new_window = np.fft.irfft(noisy_new_fft) * vorbis_window(WINDOW_LEN)
+                noisy_signal_new_slice[i * STEP: i * STEP + WINDOW_LEN] += noisy_new_window
+
+            # wrire song   
+            file_path_signal = get_path(audio_path, 'song', sl, k)
+            write_wav(file_path_signal, signal_slice_with_new_phase)
+            # write noisy_song
+            file_path_noisy = get_path(audio_path, 'noisy_song', sl, k)
+            write_wav(file_path_noisy, noisy_signal_new_slice)
 
 
 def process_signal_as_h5(audio_path):
-    sr, signal = wavfile.read(audio_path)
-    assert sr == 16000
-
-    # signals should be float to avoid int overflow and mono
-    signal = signal.astype('float32')
-    signal = to_mono(signal)
+    signal = validate_signal(audio_path)
     
     if len(signal) < SLICE_DURATION * SAMPLE_RATE:
         return
@@ -138,7 +136,7 @@ def process_signal_as_h5(audio_path):
         signal_slice = signal[sl * SLICE_STEP: sl * SLICE_STEP + SLICE_DURATION * SAMPLE_RATE]
 
         # making noisy songs using different noises with the same song slice
-        for k in range(3):
+        for k in range(INCREASE_DATASET_TIMES):
             noisy_signal_slice, noise = get_noisy_signal(signal_slice)
 
             signal_fft_slice = []
@@ -157,12 +155,7 @@ def process_signal_as_h5(audio_path):
                 noisy_signal_fft_slice.append(noisy_magnitude)
                 # noisy - signal
                 noise_magnitude = np.abs(noisy_fft - signal_fft)
-                noise_fft_slice.append(noise_magnitude)
-
-            # making np array
-            signal_fft_slice = np.asarray(signal_fft_slice) 
-            noisy_signal_fft_slice = np.asarray(noisy_signal_fft_slice)
-            noise_fft_slice = np.asarray(noise_fft_slice)  
+                noise_fft_slice.append(noise_magnitude) 
        
             # wrire song       
             song_file_path = get_path(audio_path, 'song', sl, k)
@@ -177,7 +170,24 @@ def process_signal_as_h5(audio_path):
                 write_hdf5(noise_fft_slice, noise_file_path)
 
 
+def read_hdf5(file_paths):
+    batch = []
+
+    # reading files from paths
+    for path in file_paths:
+        # getting signal array
+        with h5py.File(path, 'r') as f:
+            data = list(f['dataset'])
+        batch.append(data)
+
+    batch = np.array(batch) 
+
+    return batch   
+    
+
 def write_hdf5(signal_fft, path):
+    signal_fft = np.asarray(signal_fft) 
+
     # handle clipping
     max_absolute_signal = np.max(np.abs(signal_fft))
     if max_absolute_signal > 32767:
@@ -199,13 +209,7 @@ def write_wav(signal, path):
 def get_noisy_signal(signal):
     noise_paths = glob.glob(os.path.join(NOISE_DATAPATH if SUBSET == 'train' else NOISE_DATAPATH_TEST, "*.wav"))
     noise_path = np.random.choice(noise_paths, 1)[0]
-    print(noise_path)
-    sr, noise = wavfile.read(noise_path)
-    assert sr == 16000
-    
-    # signals should be float to avoid int overflow and mono
-    noise = noise.astype('float32')
-    noise = to_mono(noise)
+    noise = validate_signal(noise_path)
 
     if len(signal) > len(noise):
         noise_modified = get_tiled_noise(noise, len(signal))
@@ -284,6 +288,16 @@ def get_path(audio_path, folder, index, index_2=""):
 
     return path
 
+def validate_signal(path):
+    sr, signal = wavfile.read(path)
+    assert sr == 16000
+
+    # signals should be float to avoid int overflow and mono
+    signal = signal.astype('float32')
+    signal = to_mono(signal)
+
+    return signal
+
 
 def create_output_folder():
     folder = '/wavs' if SAVE_AS == 'wav' else '/h5s'
@@ -307,11 +321,7 @@ def get_signal_from_fft(magn, phase):
     return np.array(signal)
 
 def process_test_song(path):
-    sr, noisy_song = wavfile.read(path)
-    assert sr == 16000
-
-    noisy_song = to_mono(noisy_song)
-    noisy_song = noisy_song.astype('float32')
+    noisy_song = validate_signal(path)
 
     song_len = len(noisy_song)
     magn_batch = []
@@ -343,13 +353,8 @@ def process_test_song(path):
     return magn_batch, phase_batch
 
 def generate_noisy_signal(signal_path):
-    sr, signal = wavfile.read(signal_path)
-    assert sr == 16000
+    signal = validate_signal(signal_path)
     signal_len = len(signal)
-    
-    # signals should be float to avoid int overflow and mono
-    signal = signal.astype('float32')
-    signal = to_mono(signal)
 
     # config
     global SUBSET, NOISE_DATAPATH, NOISE_DATAPATH_TEST
