@@ -32,7 +32,7 @@ tf.app.flags.DEFINE_integer('summary_step', 1, 'Number of steps we cycle through
 
 tf.app.flags.DEFINE_string('song_path', None, 'pure song path to generate noisy song')
 tf.app.flags.DEFINE_string('noisy_song_path', None, 'path to load noisy song')
-tf.app.flags.DEFINE_string('output_estimated_path', './results/RNN', 'path to save estimated song')
+tf.app.flags.DEFINE_string('output_estimated_path', './results/RNN/', 'path to save estimated song')
 tf.app.flags.DEFINE_string('model_name', 'RNN', 'name of model')
 
 FLAGS = tf.app.flags.FLAGS

@@ -188,11 +188,6 @@ def read_hdf5(file_paths):
 def write_hdf5(signal_fft, path):
     signal_fft = np.asarray(signal_fft) 
 
-    # handle clipping
-    max_absolute_signal = np.max(np.abs(signal_fft))
-    if max_absolute_signal > 32767:
-        signal_fft = signal_fft * (32767 / max_absolute_signal)  
-
     with h5py.File(path, 'w') as hf:
         hf.create_dataset('dataset', data=signal_fft) 
 

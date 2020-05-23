@@ -163,18 +163,13 @@ class BaseNN:
         print('Test Cost = ', test_cost)
 
     def estimate_test_song(self, input_path, output_path):
-        # config
-        preprocess.SUBSET = "test",
-        preprocess.NOISE_DATAPATH_TEST = preprocess.DATA_PATH + '/Applause'
-        sr, noisy_song = wavfile.read(input_path)
-        assert sr == 16000
-        # signals should be float to avoid int overflow and mono
-        noisy_song = noisy_song.astype('float32')
         # preprocess wav as ffts
         magn_batch, phase_batch = preprocess.process_test_song(input_path)
         #./data/Songs/test_song/A Classic Education - NightOwl/mixture16.wav
         #./data/Songs/test_song/Actions - South Of The Water/mixture16.wav
-        magn_ideal_batch, phase_ideal_batch = preprocess.process_test_song('./data/Songs/test_song/A Classic Education - NightOwl/mixture16.wav')
+        #./data/Songs/test_song/Alexander Ross - Velvet Curtain/vev_same_claps.wav
+        ideal_song_path = './data/Songs/test_song/Alexander Ross - Velvet Curtain/mixture16.wav'
+        magn_ideal_batch, phase_ideal_batch = preprocess.process_test_song(ideal_song_path)
         
         feed_dict_test = {
             self.X_tf: magn_batch
@@ -197,10 +192,6 @@ class BaseNN:
             # get slices
             estim_song_slice_ideal = preprocess.get_signal_from_fft(magn_ideal_batch[sl], phase_batch[sl])
             estim_song_ideal[sl * preprocess.SLICE_STEP: sl * preprocess.SLICE_STEP + preprocess.SLICE_DURATION * preprocess.SAMPLE_RATE] += estim_song_slice_ideal * (preprocess.vorbis_window(len(estim_song_slice_ideal)) ** 2)
-        
-        k = preprocess.get_SNR(estim_song_ideal, estim_song, custom_dB=0)
-        estim_song = estim_song * k
-        noisy_song = noisy_song * k
 
         # handle clipping
         max_absolute_estim_song = np.max(np.abs(estim_song))
@@ -212,20 +203,8 @@ class BaseNN:
         if max_absolute_estim_song_ideal > 32767:
             estim_song_ideal = estim_song_ideal * (32767 / max_absolute_estim_song_ideal)
 
-        # handle clipping
-        max_absolute_noisy_song = np.max(np.abs(noisy_song))
-        if max_absolute_noisy_song > 32767:
-            noisy_song = noisy_song * (32767 / max_absolute_noisy_song)
-
-        folder = '/velvet/'
-        path = output_path + folder
-        # check if checkpoints' directory exists, otherwise create it.
-        if not os.path.exists(path):
-            os.makedirs(path)
-
-        wavfile.write(path + 'estimated.wav', preprocess.SAMPLE_RATE, estim_song.astype("int16"))
-        wavfile.write(path + 'ideal.wav', preprocess.SAMPLE_RATE, estim_song_ideal.astype("int16"))
-        wavfile.write(path + 'noisy.wav', preprocess.SAMPLE_RATE, noisy_song.astype("int16"))
+        wavfile.write(output_path + os.path.basename(input_path)[:-4] + '_estimated.wav', preprocess.SAMPLE_RATE, estim_song.astype("int16"))
+        wavfile.write(output_path + os.path.basename(input_path)[:-4] + '_ideal.wav', preprocess.SAMPLE_RATE, estim_song_ideal.astype("int16"))
         print("----Test song has generated successfully!----") 
 
     @abstractmethod
